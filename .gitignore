@@ -1,0 +1,26 @@
+# Local build output and dependencies
+**/node_modules/
+**/dist/
+**/dist-ssr/
+**/target/
+
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+**/application-local.properties
+*.log
+logs/
+
+# Local database dumps may contain account data
+/database.sql
+/database_*.sql
+
+# Accidental npm file created at project root
+/package-lock.json
+
+# IDE and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
