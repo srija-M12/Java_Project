@@ -27,7 +27,7 @@ public class AuthService {
     private final String campusCode;
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
-    public AuthService(JdbcTemplate jdbcTemplate, @Value("${app.security.campus-code:12345}") String campusCode) {
+    public AuthService(JdbcTemplate jdbcTemplate, @Value("${app.security.campus-code}") String campusCode) {
         this.jdbcTemplate = jdbcTemplate;
         this.campusCode = campusCode;
     }

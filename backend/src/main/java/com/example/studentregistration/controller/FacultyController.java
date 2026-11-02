@@ -3,8 +3,12 @@ package com.example.studentregistration.controller;
 import com.example.studentregistration.dto.FacultyAvailabilityRequest;
 import com.example.studentregistration.dto.FacultyAvailabilityResponse;
 import com.example.studentregistration.dto.FacultyClassResponse;
+import com.example.studentregistration.dto.AttendanceBatchRequest;
+import com.example.studentregistration.dto.AttendanceSaveResponse;
+import com.example.studentregistration.dto.FacultyAttendanceEntryResponse;
 import com.example.studentregistration.model.Faculty;
 import com.example.studentregistration.repository.FacultyRepository;
+import com.example.studentregistration.service.AttendanceService;
 import com.example.studentregistration.service.FacultyAvailabilityService;
 import com.example.studentregistration.service.FacultyTimetableService;
 import jakarta.servlet.http.HttpSession;
@@ -16,11 +20,13 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.time.LocalDate;
 
 @RestController
 @RequestMapping("/api/faculty")
@@ -28,12 +34,14 @@ public class FacultyController {
     private final FacultyRepository facultyRepository;
     private final FacultyAvailabilityService availabilityService;
     private final FacultyTimetableService timetableService;
+    private final AttendanceService attendanceService;
 
     public FacultyController(FacultyRepository facultyRepository, FacultyAvailabilityService availabilityService,
-                             FacultyTimetableService timetableService) {
+                             FacultyTimetableService timetableService, AttendanceService attendanceService) {
         this.facultyRepository = facultyRepository;
         this.availabilityService = availabilityService;
         this.timetableService = timetableService;
+        this.attendanceService = attendanceService;
     }
 
     @GetMapping("/me")
@@ -51,6 +59,20 @@ public class FacultyController {
     public List<FacultyClassResponse> getMyTimetable(HttpSession session) {
         Faculty faculty = getMyFacultyProfile(session);
         return timetableService.getWeeklyClasses(faculty.getFacultyId());
+    }
+
+    @GetMapping("/me/attendance")
+    public List<FacultyAttendanceEntryResponse> getMyAttendanceRoster(
+            HttpSession session, @RequestParam(required = false) LocalDate date) {
+        Faculty faculty = getMyFacultyProfile(session);
+        return attendanceService.getFacultyAttendance(faculty.getFacultyId(), date);
+    }
+
+    @PostMapping("/me/attendance")
+    public AttendanceSaveResponse saveMyAttendance(
+            HttpSession session, @RequestBody AttendanceBatchRequest request) {
+        Faculty faculty = getMyFacultyProfile(session);
+        return attendanceService.markAttendance(faculty.getFacultyId(), request);
     }
 
     @GetMapping("/{facultyId}")

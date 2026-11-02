@@ -237,3 +237,39 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 3px s
 .signup-two-columns>div>input,.signup-two-columns>div>select{height:43px;width:100%;padding:0 10px;border:1px solid #e1e5e8;border-radius:5px;background:#fff;color:#36445b;font:inherit;font-size:12px}
 .signup-card .login-note{margin-top:14px}
 @media(max-width:500px){.login-card.signup-card{padding:24px 19px}.signup-two-columns{grid-template-columns:1fr}.auth-form>input,.auth-form select,.signup-two-columns>div>input,.signup-two-columns>div>select{height:42px}}
+
+.attendance-page{display:grid;gap:15px}
+.attendance-toolbar{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:20px;border:1px solid #e8ebee;border-radius:7px;background:#fff}
+.attendance-toolbar h2{margin:5px 0 4px;color:#2c3b53;font-family:Georgia,serif;font-size:19px;font-weight:400}
+.attendance-toolbar p{margin:0;color:#8791a0;font-size:11px}
+.attendance-toolbar>label{display:grid;gap:6px;color:#6d788a;font-size:10px;font-weight:700}
+.attendance-toolbar input[type=date]{height:38px;padding:0 10px;border:1px solid #e1e5e8;border-radius:5px;background:#fff;color:#43536b;font:inherit;font-size:12px}
+.attendance-class-list,.attendance-day-list{display:grid;gap:14px}
+.attendance-class-card,.attendance-day-card{padding:20px}
+.attendance-roster{display:grid;border-top:1px solid #edf0f2}
+.attendance-roster-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:11px 3px;border-bottom:1px solid #f0f1f3}
+.attendance-roster-row>div,.attendance-subject{display:grid;gap:4px;min-width:0}
+.attendance-roster-row b,.attendance-subject b{color:#48576d;font-size:11px;font-weight:650}
+.attendance-roster-row small,.attendance-subject small{color:#9199a5;font-size:9px}
+.attendance-roster-row select{min-width:135px;height:36px;padding:0 9px;border:1px solid #e1e5e8;border-radius:5px;background:#fff;color:#56647a;font:inherit;font-size:11px}
+.attendance-save-button{min-width:145px;margin-top:14px}
+.attendance-period-tabs{display:flex;gap:7px;padding:5px;border:1px solid #e8ebee;border-radius:7px;background:#fff}
+.attendance-period-tabs button{min-height:37px;padding:0 17px;border:0;border-radius:5px;background:transparent;color:#798597;font:inherit;font-size:11px;font-weight:650;cursor:pointer}
+.attendance-period-tabs button.selected{background:#eef2f7;color:#2f4669}
+.attendance-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.attendance-summary>div{display:grid;gap:8px;padding:15px 17px;border:1px solid #e8ebee;border-radius:7px;background:#fff}
+.attendance-summary small{color:#969eaa;font-size:8px;font-weight:750;letter-spacing:.8px}
+.attendance-summary b{color:#344965;font-family:Georgia,serif;font-size:24px;font-weight:400}
+.attendance-student-list{display:grid;border-top:1px solid #edf0f2}
+.attendance-student-row{display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:12px;padding:12px 3px;border-bottom:1px solid #f0f1f3}
+.attendance-time{display:grid;gap:3px;color:#5e6e84;font-size:10px;font-weight:700}
+.attendance-time small{color:#9ba3ad;font-size:8px;font-weight:500}
+.attendance-status{padding:6px 9px;border-radius:20px;font-size:9px;font-weight:700;white-space:nowrap}
+.attendance-status.present{background:#edf6f0;color:#4c8763}
+.attendance-status.absent{background:#fff0ef;color:#ab514a}
+.attendance-status.not-marked{background:#f1f3f6;color:#7e8998}
+.attendance-empty{display:grid;justify-items:center;padding:34px 20px;border:1px dashed #dfe4e9;border-radius:7px;background:#fff;text-align:center}
+.attendance-empty>span{display:grid;place-items:center;width:37px;height:37px;border-radius:50%;background:#eff2f6;color:#60748f;font-size:17px}
+.attendance-empty h3{margin:12px 0 5px;color:#40516a;font-family:Georgia,serif;font-size:17px;font-weight:400}
+.attendance-empty p{max-width:440px;margin:0;color:#8d97a5;font-size:10px;line-height:1.6}
+@media(max-width:600px){.attendance-toolbar{align-items:stretch;flex-direction:column}.attendance-toolbar>label{max-width:220px}.attendance-period-tabs button{flex:1;padding-inline:7px;font-size:10px}.attendance-summary{gap:7px}.attendance-summary>div{padding:12px 10px}.attendance-summary small{font-size:7px}.attendance-student-row{grid-template-columns:48px minmax(0,1fr) auto;gap:7px}.attendance-subject b{font-size:9px}.attendance-status{padding:5px 7px;font-size:8px}.attendance-class-card,.attendance-day-card{padding:15px}.attendance-roster-row select{min-width:115px}}

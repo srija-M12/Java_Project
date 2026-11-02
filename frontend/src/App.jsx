@@ -1,9 +1,31 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
 import './App.css'
 
-const API_URL = 'http://localhost:8080'
+const API_URL = import.meta.env.VITE_API_URL || ''
 const DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY']
 const LOCAL_TODAY = new Date()
+
+function dateInputValue(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+const TODAY_DATE = dateInputValue(LOCAL_TODAY)
+
+function attendanceRange(period) {
+  const today = new Date()
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  if (period === 'week') {
+    const daysFromMonday = (start.getDay() + 6) % 7
+    start.setDate(start.getDate() - daysFromMonday)
+    return { from: dateInputValue(start), to: dateInputValue(today) }
+  }
+  if (period === 'month') {
+    const monthStart = new Date(start.getFullYear(), start.getMonth(), 1)
+    return { from: dateInputValue(monthStart), to: dateInputValue(today) }
+  }
+  const todayValue = dateInputValue(start)
+  return { from: todayValue, to: todayValue }
+}
 
 async function api(path, options = {}) {
   const response = await fetch(`${API_URL}${path}`, {
@@ -34,6 +56,11 @@ function App() {
   const [courses, setCourses] = useState([])
   const [registered, setRegistered] = useState([])
   const [timetable, setTimetable] = useState([])
+  const [attendanceRecords, setAttendanceRecords] = useState([])
+  const [attendancePeriod, setAttendancePeriod] = useState('today')
+  const [facultyAttendance, setFacultyAttendance] = useState([])
+  const [facultyAttendanceDate, setFacultyAttendanceDate] = useState(() => dateInputValue(new Date()))
+  const [attendanceDrafts, setAttendanceDrafts] = useState({})
   const [registrationPolicy, setRegistrationPolicy] = useState(null)
   const [selected, setSelected] = useState([])
   const [tab, setTab] = useState('overview')
@@ -98,11 +125,50 @@ function App() {
     finally { setBusy(false) }
   }
 
+  async function loadStudentAttendance(period = attendancePeriod) {
+    if (!student) return
+    setAttendancePeriod(period); setTab('attendance'); setLoading(true); setError('')
+    try {
+      const range = attendanceRange(period)
+      const query = new URLSearchParams(range)
+      setAttendanceRecords(await api(`/api/students/me/attendance?${query}`))
+    } catch (err) { setError(err.message || 'Could not load your attendance.') }
+    finally { setLoading(false) }
+  }
+
+  async function loadFacultyAttendance(date = facultyAttendanceDate) {
+    if (!faculty || !date) return
+    setFacultyAttendanceDate(date); setTab('attendance'); setLoading(true); setError('')
+    try {
+      const query = new URLSearchParams({ date })
+      const entries = await api(`/api/faculty/me/attendance?${query}`)
+      setFacultyAttendance(entries)
+      setAttendanceDrafts(Object.fromEntries(entries.map((entry) => [entry.timetableEntryId, entry.status || ''])))
+    } catch (err) { setError(err.message || 'Could not load the attendance roster.') }
+    finally { setLoading(false) }
+  }
+
+  async function saveFacultyAttendance(entries) {
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const result = await api('/api/faculty/me/attendance', {
+        method: 'POST',
+        body: JSON.stringify({ attendanceDate: facultyAttendanceDate, entries: entries.map((entry) => ({
+          timetableEntryId: entry.timetableEntryId,
+          status: attendanceDrafts[entry.timetableEntryId],
+        })) }),
+      })
+      setNotice(result.message || 'Attendance saved.')
+      await loadFacultyAttendance(facultyAttendanceDate)
+    } catch (err) { setError(err.message || 'Could not save attendance.') }
+    finally { setBusy(false) }
+  }
+
   async function handleLogout() {
     setBusy(true)
     try {
       await api('/api/auth/logout', { method: 'POST' })
-      setUser(null); setStudent(null); setFaculty(null); setAvailability([]); setFacultyTimetable([]); setCourses([]); setRegistered([]); setTimetable([]); setRegistrationPolicy(null); setSelected([]); setError(''); setNotice('')
+      setUser(null); setStudent(null); setFaculty(null); setAvailability([]); setFacultyTimetable([]); setCourses([]); setRegistered([]); setTimetable([]); setAttendanceRecords([]); setFacultyAttendance([]); setAttendanceDrafts({}); setRegistrationPolicy(null); setSelected([]); setError(''); setNotice('')
     } catch (err) { setError(err.message || 'Could not sign out. Please try again.') }
     finally { setBusy(false) }
   }
@@ -159,16 +225,16 @@ function App() {
       <aside className="sidebar">
         <a className="brand" href="/" aria-label="CampusFlow"><span className="brand-mark">C<span>F</span></span><span>CampusFlow</span></a>
         <div className="sidebar-label">{isFaculty ? 'FACULTY SPACE' : 'STUDENT SPACE'}</div>
-        {isFaculty ? <nav className="side-nav" aria-label="Faculty navigation"><button className={tab === 'faculty-dashboard' ? 'active' : ''} onClick={() => setTab('faculty-dashboard')}><span>▦</span> Dashboard</button><button className={tab === 'availability' ? 'active' : ''} onClick={() => setTab('availability')}><span>◷</span> My availability</button><button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}><span>◎</span> My profile</button></nav> : <nav className="side-nav" aria-label="Student navigation"><button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}><span>▦</span> Overview</button><button className={tab === 'courses' ? 'active' : ''} onClick={() => setTab('courses')}><span>▤</span> My courses <i>{termRegistered.length || ''}</i></button><button className={tab === 'timetable' ? 'active' : ''} onClick={() => setTab('timetable')}><span>▦</span> Timetable</button><button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}><span>◎</span> My profile</button></nav>}
+        {isFaculty ? <nav className="side-nav" aria-label="Faculty navigation"><button className={tab === 'faculty-dashboard' ? 'active' : ''} onClick={() => setTab('faculty-dashboard')}><span>▦</span> Dashboard</button><button className={tab === 'attendance' ? 'active' : ''} onClick={() => loadFacultyAttendance()}><span>✓</span> Mark attendance</button><button className={tab === 'availability' ? 'active' : ''} onClick={() => setTab('availability')}><span>◷</span> My availability</button><button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}><span>◎</span> My profile</button></nav> : <nav className="side-nav" aria-label="Student navigation"><button className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}><span>▦</span> Overview</button><button className={tab === 'courses' ? 'active' : ''} onClick={() => setTab('courses')}><span>▤</span> My courses <i>{termRegistered.length || ''}</i></button><button className={tab === 'timetable' ? 'active' : ''} onClick={() => setTab('timetable')}><span>▦</span> Timetable</button><button className={tab === 'attendance' ? 'active' : ''} onClick={() => loadStudentAttendance('today')}><span>✓</span> Check attendance</button><button className={tab === 'profile' ? 'active' : ''} onClick={() => setTab('profile')}><span>◎</span> My profile</button></nav>}
         <div className="sidebar-bottom"><div className="help-box"><span className="help-icon">?</span><b>Need a hand?</b><small>{isFaculty ? 'Update your teaching hours here.' : 'Reach out to your academic office for registration help.'}</small></div><button className="logout-link" onClick={handleLogout} disabled={busy}>↪ <span>Sign out</span></button></div>
       </aside>
       <section className="main-area">
         <header className="dashboard-top"><div className="breadcrumb">{isFaculty ? 'FACULTY PORTAL' : 'STUDENT PORTAL'} <span>/</span> {tab.toUpperCase()}</div><div className="account-chip"><div className="account-avatar">{firstName.slice(0, 1).toUpperCase()}</div><div><b>{faculty?.facultyName || student?.studentName || user?.username || 'Sign in'}</b><small>{faculty?.department || student?.registerNumber || user?.role || 'Academic workspace'}</small></div><span className="account-chevron">⌄</span></div></header>
         <div className="dashboard-content">
-          {!user ? <LoginForm username={username} setUsername={setUsername} password={password} setPassword={setPassword} campusCode={campusCode} setCampusCode={setCampusCode} showPassword={showPassword} setShowPassword={setShowPassword} roleChoice={roleChoice} setRoleChoice={setRoleChoice} busy={busy} error={error} notice={notice} onSubmit={handleLogin} onSignup={handleSignup} /> : isFaculty ? !faculty ? <section className="empty-panel"><div className="empty-icon">!</div><h1>Faculty profile unavailable</h1><p>{error || 'Could not load your faculty profile.'}</p><button className="primary-button" onClick={handleLogout}>Sign out and try another account</button></section> : <><div className="welcome-row"><div><div className="date-line">FACULTY WORKSPACE <span className="date-dot" /> {faculty.department}</div><h1>{tab === 'profile' ? 'My profile' : tab === 'availability' ? 'My availability' : 'Faculty dashboard'}</h1><p>{tab === 'profile' ? 'Your faculty account and department details.' : tab === 'availability' ? 'Set the teaching slots that students can use when generating timetables.' : 'See the classes scheduled for you today and throughout the week.'}</p></div><div className="term-badge"><span>FACULTY MEMBER</span><b>{faculty.facultyName}</b><small>{faculty.department} · ID {faculty.facultyId}</small></div></div>{error && <div className="alert error-alert" role="alert">{error}<button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}{notice && <div className="alert success-alert" role="status">✓ {notice}<button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}{loading ? <div className="loading-panel"><span className="spinner dark-spinner" /> Loading your faculty dashboard…</div> : tab === 'profile' ? <ProfileView kind="faculty" profile={faculty} account={user} /> : tab === 'availability' ? <FacultyAvailabilityView slots={availability} busy={busy} onUpdate={updateAvailability} onAdd={addAvailability} onDelete={deleteAvailability} /> : <FacultyDashboardView faculty={faculty} classes={facultyTimetable} onAvailability={() => setTab('availability')} />}</> : !student ? <section className="empty-panel"><div className="empty-icon">!</div><h1>Student profile unavailable</h1><p>{error || 'Could not load your student profile.'}</p><button className="primary-button" onClick={handleLogout}>Sign out and try another account</button></section> : <>
-            <div className="welcome-row"><div><div className="date-line">YOUR ACADEMIC WORKSPACE <span className="date-dot" /> {student.academicYear}</div><h1>{tab === 'courses' ? 'Your courses' : tab === 'timetable' ? 'Your timetable' : tab === 'profile' ? 'My profile' : <>Good day, {firstName}<span className="wave"> ✳</span></>}</h1><p>{tab === 'overview' ? 'A clear view of your semester starts here.' : tab === 'profile' ? 'Your student and academic details.' : `${student.department} · Semester ${student.currentSemester} · ${student.academicYear}`}</p></div><div className="term-badge"><span>CURRENT TERM</span><b>Semester {student.currentSemester}</b><small>{student.department} · {student.academicYear}</small></div></div>
+          {!user ? <LoginForm username={username} setUsername={setUsername} password={password} setPassword={setPassword} campusCode={campusCode} setCampusCode={setCampusCode} showPassword={showPassword} setShowPassword={setShowPassword} roleChoice={roleChoice} setRoleChoice={setRoleChoice} busy={busy} error={error} notice={notice} onSubmit={handleLogin} onSignup={handleSignup} /> : isFaculty ? !faculty ? <section className="empty-panel"><div className="empty-icon">!</div><h1>Faculty profile unavailable</h1><p>{error || 'Could not load your faculty profile.'}</p><button className="primary-button" onClick={handleLogout}>Sign out and try another account</button></section> : <><div className="welcome-row"><div><div className="date-line">FACULTY WORKSPACE <span className="date-dot" /> {faculty.department}</div><h1>{tab === 'profile' ? 'My profile' : tab === 'availability' ? 'My availability' : tab === 'attendance' ? 'Mark attendance' : 'Faculty dashboard'}</h1><p>{tab === 'profile' ? 'Your faculty account and department details.' : tab === 'availability' ? 'Set the teaching slots that students can use when generating timetables.' : tab === 'attendance' ? 'Record attendance for the classes on your timetable.' : 'See the classes scheduled for you today and throughout the week.'}</p></div><div className="term-badge"><span>FACULTY MEMBER</span><b>{faculty.facultyName}</b><small>{faculty.department} · ID {faculty.facultyId}</small></div></div>{error && <div className="alert error-alert" role="alert">{error}<button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}{notice && <div className="alert success-alert" role="status">✓ {notice}<button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}{loading ? <div className="loading-panel"><span className="spinner dark-spinner" /> Loading your faculty dashboard…</div> : tab === 'profile' ? <ProfileView kind="faculty" profile={faculty} account={user} /> : tab === 'availability' ? <FacultyAvailabilityView slots={availability} busy={busy} onUpdate={updateAvailability} onAdd={addAvailability} onDelete={deleteAvailability} /> : tab === 'attendance' ? <FacultyAttendanceView entries={facultyAttendance} date={facultyAttendanceDate} drafts={attendanceDrafts} onDateChange={loadFacultyAttendance} onStatusChange={(id, status) => setAttendanceDrafts((current) => ({ ...current, [id]: status }))} onSave={saveFacultyAttendance} busy={busy} /> : <FacultyDashboardView faculty={faculty} classes={facultyTimetable} onAvailability={() => setTab('availability')} />}</> : !student ? <section className="empty-panel"><div className="empty-icon">!</div><h1>Student profile unavailable</h1><p>{error || 'Could not load your student profile.'}</p><button className="primary-button" onClick={handleLogout}>Sign out and try another account</button></section> : <>
+            <div className="welcome-row"><div><div className="date-line">YOUR ACADEMIC WORKSPACE <span className="date-dot" /> {student.academicYear}</div><h1>{tab === 'courses' ? 'Your courses' : tab === 'timetable' ? 'Your timetable' : tab === 'attendance' ? 'Check attendance' : tab === 'profile' ? 'My profile' : <>Good day, {firstName}<span className="wave"> ✳</span></>}</h1><p>{tab === 'overview' ? 'A clear view of your semester starts here.' : tab === 'profile' ? 'Your student and academic details.' : tab === 'attendance' ? 'View the attendance recorded for your scheduled classes.' : `${student.department} · Semester ${student.currentSemester} · ${student.academicYear}`}</p></div><div className="term-badge"><span>CURRENT TERM</span><b>Semester {student.currentSemester}</b><small>{student.department} · {student.academicYear}</small></div></div>
             {error && <div className="alert error-alert" role="alert">{error}<button onClick={() => setError('')} aria-label="Dismiss">×</button></div>}{notice && <div className="alert success-alert" role="status">✓ {notice}<button onClick={() => setNotice('')} aria-label="Dismiss">×</button></div>}
-            {loading ? <div className="loading-panel"><span className="spinner dark-spinner" /> Loading your semester information…</div> : tab === 'profile' ? <ProfileView kind="student" profile={student} account={user} /> : tab === 'overview' ? <Overview student={student} registered={termRegistered} timetable={timetable} onCourses={() => setTab('courses')} onTimetable={() => setTab('timetable')} onGenerate={generateTimetable} busy={busy} hasRegistration={hasRegistration} /> : tab === 'courses' ? <CoursesView student={student} policy={registrationPolicy} courses={courses} registered={termRegistered} selected={selected} toggleCourse={toggleCourse} registerCourses={registerCourses} busy={busy} /> : <TimetableView timetable={timetable} onGenerate={generateTimetable} busy={busy} />}
+            {loading ? <div className="loading-panel"><span className="spinner dark-spinner" /> Loading your semester information…</div> : tab === 'profile' ? <ProfileView kind="student" profile={student} account={user} /> : tab === 'attendance' ? <StudentAttendanceView period={attendancePeriod} entries={attendanceRecords} onPeriodChange={loadStudentAttendance} /> : tab === 'overview' ? <Overview student={student} registered={termRegistered} timetable={timetable} onCourses={() => setTab('courses')} onTimetable={() => setTab('timetable')} onGenerate={generateTimetable} busy={busy} hasRegistration={hasRegistration} /> : tab === 'courses' ? <CoursesView student={student} policy={registrationPolicy} courses={courses} registered={termRegistered} selected={selected} toggleCourse={toggleCourse} registerCourses={registerCourses} busy={busy} /> : <TimetableView timetable={timetable} onGenerate={generateTimetable} busy={busy} />}
           </>}
         </div>
         {(student || faculty) && <footer className="dashboard-footer">CAMPUSFLOW <span>·</span> COURSE REGISTRATION &amp; TIMETABLE</footer>}
@@ -224,6 +290,48 @@ function LoginForm({ username, setUsername, password, setPassword, campusCode, s
     {mode !== 'login' && <button type="button" className="auth-back-link" onClick={() => { setMode('login'); setLocalError('') }}>← Back to sign in</button>}
     <div className="login-note">◈ Secure access to your academic workspace</div>
   </div></div>
+}
+
+function FacultyAttendanceView({ entries, date, drafts, onDateChange, onStatusChange, onSave, busy }) {
+  const grouped = Object.values(entries.reduce((groups, entry) => {
+    const key = `${entry.courseId}-${entry.dayOfWeek}-${entry.startTime}`
+    if (!groups[key]) groups[key] = { ...entry, students: [] }
+    groups[key].students.push(entry)
+    return groups
+  }, {}))
+  const today = TODAY_DATE
+
+  return <section className="attendance-page">
+    <div className="attendance-toolbar"><div><span className="card-eyebrow">FACULTY ROSTER</span><h2>Classes for this date</h2><p>Choose Present or Absent for each student, then save that class.</p></div><label>Date<input type="date" value={date} max={today} onChange={(event) => onDateChange(event.target.value)} /></label></div>
+    {grouped.length === 0 ? <div className="attendance-empty"><span>◷</span><h3>No classes on this date</h3><p>There are no timetable periods assigned to you for {new Intl.DateTimeFormat('en-IN', { dateStyle: 'full' }).format(Date.parse(`${date}T00:00:00`))}.</p></div> : <div className="attendance-class-list">{grouped.map((group) => {
+      const complete = group.students.every((student) => ['PRESENT', 'ABSENT'].includes(drafts[student.timetableEntryId]))
+      return <article className="content-card attendance-class-card" key={`${group.courseId}-${group.startTime}`}>
+        <div className="card-heading"><div><span className="card-eyebrow">{group.courseCode} · {group.startTime.slice(0, 5)}–{group.endTime.slice(0, 5)}</span><h2>{group.courseName}</h2></div><span className="count-pill">{group.students.length} students</span></div>
+        <div className="attendance-roster">{group.students.map((student) => <div className="attendance-roster-row" key={student.timetableEntryId}><div><b>{student.studentName}</b><small>{student.registerNumber}</small></div><select aria-label={`Attendance for ${student.studentName}`} value={drafts[student.timetableEntryId] || ''} onChange={(event) => onStatusChange(student.timetableEntryId, event.target.value)}><option value="">Choose status</option><option value="PRESENT">Present</option><option value="ABSENT">Absent</option></select></div>)}</div>
+        <button className="primary-button attendance-save-button" disabled={busy || !complete} onClick={() => onSave(group.students)}>{busy ? 'Saving…' : 'Save attendance'}</button>
+      </article>
+    })}</div>}
+  </section>
+}
+
+function StudentAttendanceView({ period, entries, onPeriodChange }) {
+  const present = entries.filter((entry) => entry.status === 'PRESENT').length
+  const absent = entries.filter((entry) => entry.status === 'ABSENT').length
+  const notMarked = entries.filter((entry) => entry.status === 'NOT_MARKED').length
+  const grouped = entries.reduce((result, entry) => {
+    (result[entry.attendanceDate] ||= []).push(entry)
+    return result
+  }, {})
+  const sections = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b))
+
+  return <section className="attendance-page">
+    <div className="attendance-period-tabs" role="tablist" aria-label="Attendance date range">{[['today', 'Today'], ['week', 'This week'], ['month', 'This month']].map(([value, label]) => <button type="button" role="tab" aria-selected={period === value} className={period === value ? 'selected' : ''} key={value} onClick={() => onPeriodChange(value)}>{label}</button>)}</div>
+    <div className="attendance-summary"><div><small>PRESENT</small><b>{present}</b></div><div><small>ABSENT</small><b>{absent}</b></div><div><small>NOT MARKED</small><b>{notMarked}</b></div></div>
+    {sections.length === 0 ? <div className="attendance-empty"><span>✓</span><h3>No timetable periods found</h3><p>Your scheduled periods will appear here after a timetable has been generated.</p></div> : <div className="attendance-day-list">{sections.map(([date, dayEntries]) => <article className="content-card attendance-day-card" key={date}>
+      <div className="card-heading"><div><span className="card-eyebrow">{date === TODAY_DATE ? 'TODAY' : dayEntries[0].dayOfWeek}</span><h2>{new Intl.DateTimeFormat('en-IN', { weekday: 'long', day: 'numeric', month: 'long' }).format(Date.parse(`${date}T00:00:00`))}</h2></div><span className="count-pill">{dayEntries.length} periods</span></div>
+      <div className="attendance-student-list">{dayEntries.map((entry) => <div className="attendance-student-row" key={`${date}-${entry.timetableEntryId}`}><div className="attendance-time">{entry.startTime.slice(0, 5)}<small>{entry.endTime.slice(0, 5)}</small></div><div className="attendance-subject"><b>{entry.courseCode} · {entry.courseName}</b><small>{entry.facultyName}</small></div><span className={`attendance-status ${entry.status.toLowerCase().replace('_', '-')}`}>{entry.status === 'NOT_MARKED' ? 'Not marked' : entry.status === 'PRESENT' ? 'Present' : 'Absent'}</span></div>)}</div>
+    </article>)}</div>}
+  </section>
 }
 
 function AuthFeedback({ error, notice }) {

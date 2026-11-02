@@ -19,10 +19,8 @@ import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Service
 public class TimetableService {
@@ -122,58 +120,22 @@ public class TimetableService {
             List<Slot> shared = savedSlots.stream()
                     .filter(saved -> saved.courseId().equals(course.getCourseId()))
                     .map(SavedSlot::slot)
+                    .filter(available::contains)
                     .distinct()
                     .sorted(slotOrder())
                     .toList();
-            if (shared.size() > course.getPeriodsPerWeek()) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                        "Existing timetable has more meetings than the weekly period count for " + course.getCourseCode());
-            }
-            if (shared.stream().anyMatch(slot -> !available.contains(slot))) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                        "An existing shared period for " + course.getCourseCode() + " is no longer available to its faculty");
-            }
             sharedCourseSlots.put(course.getCourseId(), shared);
         }
 
         List<ScheduledCourse> scheduled = new ArrayList<>();
         Map<String, Integer> dailyCounts = new HashMap<>();
         WEEKDAYS.forEach(day -> dailyCounts.put(day, 0));
-
-        // Preserve already published meetings for shared courses, then fill remaining weekly periods.
-        for (Course course : courses) {
-            for (Slot slot : sharedCourseSlots.get(course.getCourseId())) {
-                addSlotOrFail(course, slot, scheduled, savedSlots, dailyCounts);
-            }
-        }
-
-        List<Course> schedulingOrder = new ArrayList<>(courses);
-        schedulingOrder.sort(Comparator.comparingInt((Course course) ->
-                facultyOptions.get(course.getCourseId()).size() - course.getPeriodsPerWeek()));
-        for (Course course : schedulingOrder) {
-            Set<Slot> assignedForCourse = new HashSet<>(scheduled.stream()
-                    .filter(item -> item.course().getCourseId().equals(course.getCourseId()))
-                    .map(ScheduledCourse::slot)
-                    .toList());
-            int missing = course.getPeriodsPerWeek() - assignedForCourse.size();
-            for (int meeting = 0; meeting < missing; meeting++) {
-                Slot chosen = facultyOptions.get(course.getCourseId()).stream()
-                        .filter(candidate -> !assignedForCourse.contains(candidate))
-                        .filter(candidate -> dailyCounts.get(candidate.dayOfWeek()) < MAX_PERIODS_PER_DAY)
-                        .filter(candidate -> !hasStudentConflict(candidate, scheduled))
-                        .filter(candidate -> !hasFacultyConflict(course.getFacultyId(), course.getCourseId(), candidate, savedSlots))
-                        .filter(candidate -> !hasLocalFacultyConflict(course, candidate, scheduled))
-                        .min(Comparator
-                                .comparingInt((Slot candidate) -> dailyCounts.get(candidate.dayOfWeek()))
-                                .thenComparingInt(candidate -> countCoursePeriodsOnDay(course, candidate.dayOfWeek(), scheduled))
-                                .thenComparing(slotOrder()))
-                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
-                                "No conflict-free faculty period is available for " + course.getCourseCode()
-                                        + ". Review faculty availability or selected courses."));
-                scheduled.add(new ScheduledCourse(course, chosen));
-                dailyCounts.compute(chosen.dayOfWeek(), (day, count) -> count + 1);
-                assignedForCourse.add(chosen);
-            }
+        int totalPeriods = courses.stream().mapToInt(Course::getPeriodsPerWeek).sum();
+        if (!scheduleWithBacktracking(courses, facultyOptions, sharedCourseSlots, savedSlots,
+                scheduled, dailyCounts, totalPeriods)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "No conflict-free timetable can fit all selected course periods. Review faculty availability, "
+                            + "existing timetables, or the selected courses' periods per week.");
         }
 
         for (String day : WEEKDAYS) {
@@ -204,20 +166,69 @@ public class TimetableService {
         return getTimetable(studentId);
     }
 
-    private void addSlotOrFail(Course course, Slot slot, List<ScheduledCourse> scheduled,
-                               List<SavedSlot> savedSlots, Map<String, Integer> dailyCounts) {
-        if (hasStudentConflict(slot, scheduled)
-                || hasFacultyConflict(course.getFacultyId(), course.getCourseId(), slot, savedSlots)
-                || hasLocalFacultyConflict(course, slot, scheduled)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Existing shared periods conflict with the selected courses for " + course.getCourseCode());
+    private boolean scheduleWithBacktracking(List<Course> courses, Map<Long, List<Slot>> facultyOptions,
+                                             Map<Long, List<Slot>> sharedCourseSlots,
+                                             List<SavedSlot> savedSlots, List<ScheduledCourse> scheduled,
+                                             Map<String, Integer> dailyCounts, int totalPeriods) {
+        if (scheduled.size() == totalPeriods) {
+            return WEEKDAYS.stream().allMatch(day -> dailyCounts.get(day) >= MIN_PERIODS_PER_DAY
+                    && dailyCounts.get(day) <= MAX_PERIODS_PER_DAY);
         }
-        if (dailyCounts.get(slot.dayOfWeek()) >= MAX_PERIODS_PER_DAY) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    slot.dayOfWeek() + " exceeds the maximum of eight daily periods");
+
+        int remainingOverall = totalPeriods - scheduled.size();
+        if (WEEKDAYS.stream().anyMatch(day -> dailyCounts.get(day) + remainingOverall < MIN_PERIODS_PER_DAY)) {
+            return false;
         }
-        scheduled.add(new ScheduledCourse(course, slot));
-        dailyCounts.compute(slot.dayOfWeek(), (day, count) -> count + 1);
+
+        Course selectedCourse = null;
+        List<Slot> selectedCandidates = List.of();
+        int fewestCandidates = Integer.MAX_VALUE;
+
+        // Choose the course with the fewest currently usable periods first.
+        for (Course course : courses) {
+            long assigned = scheduled.stream()
+                    .filter(item -> item.course().getCourseId().equals(course.getCourseId()))
+                    .count();
+            int periodsNeeded = course.getPeriodsPerWeek() - (int) assigned;
+            if (periodsNeeded <= 0) continue;
+
+            List<Slot> candidates = facultyOptions.get(course.getCourseId()).stream()
+                    .filter(candidate -> scheduled.stream().noneMatch(item ->
+                            item.course().getCourseId().equals(course.getCourseId())
+                                    && item.slot().equals(candidate)))
+                    .filter(candidate -> dailyCounts.get(candidate.dayOfWeek()) < MAX_PERIODS_PER_DAY)
+                    .filter(candidate -> !hasStudentConflict(candidate, scheduled))
+                    .filter(candidate -> !hasFacultyConflict(course.getFacultyId(), course.getCourseId(), candidate, savedSlots))
+                    .filter(candidate -> !hasLocalFacultyConflict(course, candidate, scheduled))
+                    .sorted(Comparator
+                            .comparingInt((Slot candidate) -> sharedCourseSlots.get(course.getCourseId()).contains(candidate) ? 0 : 1)
+                            .thenComparingInt(candidate -> dailyCounts.get(candidate.dayOfWeek()))
+                            .thenComparingInt(candidate -> countCoursePeriodsOnDay(course, candidate.dayOfWeek(), scheduled))
+                            .thenComparing(slotOrder()))
+                    .toList();
+
+            if (candidates.size() < periodsNeeded) return false;
+            if (candidates.size() < fewestCandidates) {
+                selectedCourse = course;
+                selectedCandidates = candidates;
+                fewestCandidates = candidates.size();
+            }
+        }
+
+        if (selectedCourse == null) return false;
+        for (Slot candidate : selectedCandidates) {
+            scheduled.add(new ScheduledCourse(selectedCourse, candidate));
+            dailyCounts.compute(candidate.dayOfWeek(), (day, count) -> count + 1);
+
+            if (scheduleWithBacktracking(courses, facultyOptions, sharedCourseSlots, savedSlots,
+                    scheduled, dailyCounts, totalPeriods)) {
+                return true;
+            }
+
+            scheduled.remove(scheduled.size() - 1);
+            dailyCounts.compute(candidate.dayOfWeek(), (day, count) -> count - 1);
+        }
+        return false;
     }
 
     private int countCoursePeriodsOnDay(Course course, String day, List<ScheduledCourse> scheduled) {

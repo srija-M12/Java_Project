@@ -28,6 +28,7 @@ Create the `student_registration` database. In MySQL Workbench, run these schema
 2. `database/schema/course_details.sql`
 3. `database/schema/registration_rules.sql`
 4. `database/schema/timetable_rules.sql`
+5. `database/schema/attendance.sql`
 
 These files define the database structure and do not contain the local student, user, or faculty records.
 
@@ -55,3 +56,7 @@ npm run dev
 Open the local address printed by Vite, usually `http://localhost:5173/`.
 
 > Database credentials and the campus code belong in local environment variables, not in this repository. A fresh database needs course, faculty, availability, registration-policy, and student records before it can be used.
+
+## Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the Docker build and hosted MySQL setup. The repository itself is the source-code page; a hosting service is needed to provide the public website URL.
